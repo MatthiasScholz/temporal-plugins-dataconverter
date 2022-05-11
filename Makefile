@@ -10,3 +10,7 @@ plugin:
 
 deps:
 	go mod tidy
+
+version:
+	make -version
+	go version
