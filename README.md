@@ -5,6 +5,11 @@ was extracted from the excellent [Temporal Background Checks Demo](https://docs.
 
 This repository serves on my Temporal learning path.
 
+## Tasks
+
+- Migrate to Temporal [v1.16](https://github.com/temporalio/temporal/releases/tag/v1.16.0)
+  - tctl implementation has been moved to a new [repository](https://github.com/temporalio/tctl)
+
 ## Usage
 
 ```
