@@ -4,8 +4,7 @@ import (
 	"github.com/hashicorp/go-plugin"
 
 	"go.temporal.io/sdk/converter"
-	cliplugin "go.temporal.io/server/tools/cli/plugin"
-	//cliplugin "go.temporal.io/tctl/cli/plugin"
+	cliplugin "github.com/temporalio/tctl/cli/plugin"
 
 	"github.com/MatthiasScholz/temporal-plugins-dataconverter/internal/pkg"
 )
