@@ -3,7 +3,7 @@ init:
 	go mod init $(git_url)
 
 client:
-	go run cmd/client/main.go
+	go build cmd/client/main.go
 
 plugin:
 	go build internal/app/plugin/main.go
