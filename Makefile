@@ -3,10 +3,10 @@ init:
 	go mod init $(git_url)
 
 client:
-	go build cmd/client/main.go
+	go build -o client cmd/client/main.go
 
 plugin:
-	go build internal/app/plugin/main.go
+	go build -o plugin-dataconverter-encryption internal/app/plugin/main.go
 
 deps:
 	go mod tidy
