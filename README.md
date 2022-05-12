@@ -26,3 +26,4 @@ make client
 - [Temporal](https://www.temporal.io)
 - [Temporal Background Checks Demo](https://docs.temporal.io/docs/learning-paths/background-checks/)
 - [Temporal Origin Source Code](https://github.com/temporalio/background-checks/tree/main/temporal)
+- [Sample: Temporal Dataconverter Encryption](https://github.com/temporalio/samples-go/tree/main/encryption)
