@@ -7,7 +7,7 @@ import (
 	"go.temporal.io/sdk/converter"
 	cliplugin "github.com/temporalio/tctl/cli/plugin"
 
-	"github.com/MatthiasScholz/temporal-plugins-dataconverter/internal/pkg"
+	"github.com/MatthiasScholz/temporal-plugins-dataconverter/pkg"
 )
 
 func main() {

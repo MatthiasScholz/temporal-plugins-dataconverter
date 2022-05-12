@@ -4,7 +4,7 @@ package temporal
 import (
 	"os"
 
-	"github.com/MatthiasScholz/temporal-plugins-dataconverter/internal/pkg"
+	"github.com/MatthiasScholz/temporal-plugins-dataconverter/pkg"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
 )
