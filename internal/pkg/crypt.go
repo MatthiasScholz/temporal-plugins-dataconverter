@@ -1,4 +1,5 @@
-package dataconverter
+// https://github.com/temporalio/samples-go/tree/main/encryption
+package encryption
 
 import (
 	"crypto/aes"

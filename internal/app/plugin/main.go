@@ -1,3 +1,4 @@
+// https://github.com/temporalio/samples-go/tree/main/encryption
 package main
 
 import (
@@ -12,9 +13,9 @@ import (
 func main() {
 	var pluginMap = map[string]plugin.Plugin{
 		cliplugin.DataConverterPluginType: &cliplugin.DataConverterPlugin{
-			Impl: dataconverter.NewEncryptionDataConverter(
+			Impl: encryption.NewEncryptionDataConverter(
 				converter.GetDefaultDataConverter(),
-				dataconverter.DataConverterOptions{},
+				encryption.DataConverterOptions{Compress: true},
 			),
 		},
 	}

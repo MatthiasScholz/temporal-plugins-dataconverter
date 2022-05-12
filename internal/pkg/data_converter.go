@@ -1,11 +1,14 @@
-package dataconverter
+// https://github.com/temporalio/samples-go/tree/main/encryption
+package encryption
 
 import (
+	"context"
 	"fmt"
 
 	commonpb "go.temporal.io/api/common/v1"
 
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/workflow"
 )
 
 const (
@@ -16,77 +19,141 @@ const (
 	MetadataEncryptionKeyID = "encryption-key-id"
 )
 
+type DataConverter struct {
+	// Until EncodingDataConverter supports workflow.ContextAware we'll store parent here.
+	parent converter.DataConverter
+	converter.DataConverter
+	options DataConverterOptions
+}
+
 type DataConverterOptions struct {
 	KeyID string
+	// Enable ZLib compression before encryption.
+	Compress bool
 }
 
-// Encoder implements PayloadEncoder using AES Crypt.
-type Encoder struct {
+// Codec implements PayloadCodec using AES Crypt.
+type Codec struct {
 	KeyID string
 }
 
-func (e *Encoder) getKey(keyID string) (key []byte) {
-	// TODO Key must be fetched from secure storage in production (such as a KMS).
-	// NOTE For testing here we just hard code a key.
+// TODO: Implement workflow.ContextAware in CodecDataConverter
+// Note that you only need to implement this function if you need to vary the encryption KeyID per workflow.
+func (dc *DataConverter) WithWorkflowContext(ctx workflow.Context) converter.DataConverter {
+	if val, ok := ctx.Value(PropagateKey).(CryptContext); ok {
+		parent := dc.parent
+		if parentWithContext, ok := parent.(workflow.ContextAware); ok {
+			parent = parentWithContext.WithWorkflowContext(ctx)
+		}
+
+		options := dc.options
+		options.KeyID = val.KeyID
+
+		return NewEncryptionDataConverter(parent, options)
+	}
+
+	return dc
+}
+
+// TODO: Implement workflow.ContextAware in EncodingDataConverter
+// Note that you only need to implement this function if you need to vary the encryption KeyID per workflow.
+func (dc *DataConverter) WithContext(ctx context.Context) converter.DataConverter {
+	if val, ok := ctx.Value(PropagateKey).(CryptContext); ok {
+		parent := dc.parent
+		if parentWithContext, ok := parent.(workflow.ContextAware); ok {
+			parent = parentWithContext.WithContext(ctx)
+		}
+
+		options := dc.options
+		options.KeyID = val.KeyID
+
+		return NewEncryptionDataConverter(parent, options)
+	}
+
+	return dc
+}
+
+func (e *Codec) getKey(keyID string) (key []byte) {
+	// Key must be fetched from secure storage in production (such as a KMS).
+	// For testing here we just hard code a key.
 	return []byte("test-key-test-key-test-key-test!")
 }
 
 // NewEncryptionDataConverter creates a new instance of EncryptionDataConverter wrapping a DataConverter
-func NewEncryptionDataConverter(dataConverter converter.DataConverter, options DataConverterOptions) converter.DataConverter {
-	encoders := []converter.PayloadEncoder{
-		&Encoder{KeyID: options.KeyID},
+func NewEncryptionDataConverter(dataConverter converter.DataConverter, options DataConverterOptions) *DataConverter {
+	codecs := []converter.PayloadCodec{
+		&Codec{KeyID: options.KeyID},
+	}
+	// Enable compression if requested.
+	// Note that this must be done before encryption to provide any value. Encrypted data should by design not compress very well.
+	// This means the compression codec must come after the encryption codec here as codecs are applied last -> first.
+	if options.Compress {
+		codecs = append(codecs, converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true}))
 	}
 
-	return converter.NewEncodingDataConverter(dataConverter, encoders...)
+	return &DataConverter{
+		parent:        dataConverter,
+		DataConverter: converter.NewCodecDataConverter(dataConverter, codecs...),
+		options:       options,
+	}
 }
 
-// Encode implements converter.PayloadEncoder.Encode.
-func (e *Encoder) Encode(p *commonpb.Payload) error {
-	// Ensure that we never send plaintext Payloads to Temporal
-	if e.KeyID == "" {
-		return fmt.Errorf("no encryption key ID configured for data converter")
+// Encode implements converter.PayloadCodec.Encode.
+func (e *Codec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	result := make([]*commonpb.Payload, len(payloads))
+	for i, p := range payloads {
+		origBytes, err := p.Marshal()
+		if err != nil {
+			return payloads, err
+		}
+
+		key := e.getKey(e.KeyID)
+
+		b, err := encrypt(origBytes, key)
+		if err != nil {
+			return payloads, err
+		}
+
+		result[i] = &commonpb.Payload{
+			Metadata: map[string][]byte{
+				converter.MetadataEncoding: []byte(MetadataEncodingEncrypted),
+				MetadataEncryptionKeyID:    []byte(e.KeyID),
+			},
+			Data: b,
+		}
 	}
 
-	origBytes, err := p.Marshal()
-	if err != nil {
-		return err
-	}
-
-	key := e.getKey(e.KeyID)
-
-	b, err := encrypt(origBytes, key)
-	if err != nil {
-		return err
-	}
-
-	p.Metadata = map[string][]byte{
-		converter.MetadataEncoding: []byte(MetadataEncodingEncrypted),
-		MetadataEncryptionKeyID:    []byte(e.KeyID),
-	}
-	p.Data = b
-
-	return nil
+	return result, nil
 }
 
-// Decode implements converter.PayloadEncoder.Decode.
-func (e *Encoder) Decode(p *commonpb.Payload) error {
-	// Only if it's encrypted
-	if string(p.Metadata[converter.MetadataEncoding]) != MetadataEncodingEncrypted {
-		return nil
+// Decode implements converter.PayloadCodec.Decode.
+func (e *Codec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	result := make([]*commonpb.Payload, len(payloads))
+	for i, p := range payloads {
+		// Only if it's encrypted
+		if string(p.Metadata[converter.MetadataEncoding]) != MetadataEncodingEncrypted {
+			result[i] = p
+			continue
+		}
+
+		keyID, ok := p.Metadata[MetadataEncryptionKeyID]
+		if !ok {
+			return payloads, fmt.Errorf("no encryption key id")
+		}
+
+		key := e.getKey(string(keyID))
+
+		b, err := decrypt(p.Data, key)
+		if err != nil {
+			return payloads, err
+		}
+
+		result[i] = &commonpb.Payload{}
+		err = result[i].Unmarshal(b)
+		if err != nil {
+			return payloads, err
+		}
 	}
 
-	keyID, ok := p.Metadata[MetadataEncryptionKeyID]
-	if !ok {
-		return fmt.Errorf("no encryption key id")
-	}
-
-	key := e.getKey(string(keyID))
-
-	b, err := decrypt(p.Data, key)
-	if err != nil {
-		return err
-	}
-
-	p.Reset()
-	return p.Unmarshal(b)
+	return result, nil
 }
